@@ -5,9 +5,51 @@
 提供多平台标题格式化功能
 """
 
-from typing import Dict
+import logging
+from typing import Dict, Optional
 
 from trendradar.report.helpers import clean_title, html_escape, format_rank_display
+
+logger = logging.getLogger(__name__)
+
+# 短链接配置（由 context 初始化时设置）
+_shorturl_config: Optional[Dict] = None
+
+
+def set_shorturl_config(config: Optional[Dict]):
+    """设置短链接配置
+
+    Args:
+        config: 短链接配置字典，包含 enabled, service, timeout
+    """
+    global _shorturl_config
+    _shorturl_config = config
+
+
+def get_short_url(url: str) -> str:
+    """获取短链接
+
+    Args:
+        url: 原始链接
+
+    Returns:
+        短链接（如果启用）或原始链接
+    """
+    if not url:
+        return url
+
+    if not _shorturl_config or not _shorturl_config.get("enabled", False):
+        return url
+
+    try:
+        from trendradar.utils.shorturl import shorten_url
+
+        service = _shorturl_config.get("service", "tinyurl")
+        timeout = _shorturl_config.get("timeout", 3)
+        return shorten_url(url, service=service, timeout=timeout)
+    except Exception as e:
+        logger.debug(f"短链接转换失败: {e}")
+        return url
 
 
 def format_title_for_platform(
@@ -48,13 +90,16 @@ def format_title_for_platform(
         title_data["ranks"], title_data["rank_threshold"], platform
     )
 
-    link_url = title_data["mobile_url"] or title_data["url"]
+    # 获取链接并转换为短链接（如果启用）
+    original_url = title_data["mobile_url"] or title_data["url"]
+    link_url = get_short_url(original_url)
     cleaned_title = clean_title(title_data["title"])
 
     # 获取关键词标签（platform 模式使用）
     keyword = title_data.get("matched_keyword", "") if show_keyword else ""
 
     if platform == "feishu":
+        # 飞书简洁格式：[来源] 标题 (排名)
         if link_url:
             formatted_title = f"[{cleaned_title}]({link_url})"
         else:
@@ -63,18 +108,15 @@ def format_title_for_platform(
         title_prefix = "🆕 " if title_data.get("is_new") else ""
 
         if show_source:
-            result = f"<font color='grey'>[{title_data['source_name']}]</font> {title_prefix}{formatted_title}"
+            result = f"[{title_data['source_name']}] {title_prefix}{formatted_title}"
         elif show_keyword and keyword:
-            result = f"<font color='blue'>[{keyword}]</font> {title_prefix}{formatted_title}"
+            result = f"[{keyword}] {title_prefix}{formatted_title}"
         else:
             result = f"{title_prefix}{formatted_title}"
 
+        # 只显示排名，去掉时间和次数
         if rank_display:
             result += f" {rank_display}"
-        if title_data["time_display"]:
-            result += f" <font color='grey'>- {title_data['time_display']}</font>"
-        if title_data["count"] > 1:
-            result += f" <font color='green'>({title_data['count']}次)</font>"
 
         return result
 
@@ -210,6 +252,7 @@ def format_title_for_platform(
             title_data["ranks"], title_data["rank_threshold"], "html"
         )
 
+        # HTML 报告不使用短链接（保留原始链接便于追溯）
         link_url = title_data["mobile_url"] or title_data["url"]
 
         escaped_title = html_escape(cleaned_title)

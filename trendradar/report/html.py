@@ -48,7 +48,7 @@ def render_html_content(
         渲染后的 HTML 字符串
     """
     # 默认区域顺序
-    default_region_order = ["hotlist", "rss", "new_items", "standalone", "ai_analysis"]
+    default_region_order = ["hot_events", "douyin_focus", "new_items", "hotlist", "rss", "standalone", "ai_analysis"]
     if region_order is None:
         region_order = default_region_order
 
@@ -348,6 +348,13 @@ def render_html_content(
                 font-size: 16px;
                 font-weight: 600;
                 margin: 0 0 20px 0;
+            }
+
+            .new-section-subtitle {
+                color: #444;
+                font-size: 14px;
+                font-weight: 600;
+                margin: 12px 0 8px 0;
             }
 
             .new-source-group {
@@ -1317,11 +1324,120 @@ def render_html_content(
     # 生成独立展示区 HTML
     standalone_html = render_standalone_html(standalone_data)
 
+    # 生成全网热点事件 HTML（跨平台聚合）
+    def render_hot_events_html(events: Optional[List[Dict]]) -> str:
+        if not events:
+            return ""
+        html_block = """
+                <div class="new-section section-divider">
+                    <h3 class="new-section-title">🌐 全网热点事件</h3>
+        """
+        for idx, e in enumerate(events, 1):
+            title = html_escape(e.get("title", ""))
+            url = html_escape(e.get("mobile_url") or e.get("url") or "")
+            platforms = e.get("platforms") or []
+            platform_count = e.get("platform_count") or len(platforms)
+            platforms_text = " / ".join(platforms[:4]) + (" 等" if len(platforms) > 4 else "")
+            platforms_text = html_escape(platforms_text)
+            best_rank = e.get("best_rank") or (e.get("ranks") or [None])[0]
+            best_rank_text = html_escape(str(best_rank)) if best_rank else "-"
+
+            html_block += """
+                    <div class="new-item">
+                        <div class="new-item-number">{num}</div>
+                        <div class="new-item-content">
+                            <p class="new-item-title">{title_html}
+                                <span class="time-info"> · {platform_count}平台 · {platforms}</span>
+                                <span class="time-info"> · 排名 {rank}</span>
+                            </p>
+                        </div>
+                    </div>
+            """.format(
+                num=idx,
+                title_html=(f'<a href="{url}" target="_blank" class="news-link">{title}</a>' if url else title),
+                platform_count=platform_count,
+                platforms=platforms_text,
+                rank=best_rank_text,
+            )
+
+        html_block += """
+                </div>
+        """
+        return html_block
+
+    hot_events_html = render_hot_events_html(report_data.get("hot_events"))
+
+    # 生成抖音深度热度 HTML
+    def render_douyin_focus_html(focus: Optional[Dict]) -> str:
+        if not focus:
+            return ""
+        hot_items = focus.get("hot") or []
+        rising_items = focus.get("rising") or []
+        if not hot_items and not rising_items:
+            return ""
+
+        html_block = """
+                <div class="new-section section-divider">
+                    <h3 class="new-section-title">🎵 抖音游戏热度深度区</h3>
+        """
+
+        def render_list(title: str, items: List[Dict]) -> str:
+            if not items:
+                return ""
+            block = f'<div class="new-section-subtitle">{html_escape(title)}</div>'
+            for idx, e in enumerate(items, 1):
+                item_title = html_escape(e.get("title", ""))
+                url = html_escape(e.get("mobile_url") or e.get("url") or "")
+                rank = e.get("rank")
+                delta = e.get("delta", 0)
+                trend = html_escape(e.get("trend") or "")
+                total_improve = e.get("total_improve", 0)
+                improve_steps = e.get("improve_steps", 0)
+                meta_parts = []
+                if rank:
+                    meta_parts.append(f"排名 {rank}")
+                if delta and delta > 0:
+                    meta_parts.append(f"↑{delta}")
+                if total_improve and total_improve > 0:
+                    meta_parts.append(f"累计↑{total_improve}")
+                if improve_steps and improve_steps > 0:
+                    meta_parts.append(f"连续{improve_steps}")
+                if trend:
+                    meta_parts.append(f"趋势 {trend}")
+                meta_text = " · ".join(meta_parts)
+
+                block += """
+                    <div class="new-item">
+                        <div class="new-item-number">{num}</div>
+                        <div class="new-item-content">
+                            <p class="new-item-title">{title_html}
+                                <span class="time-info"> · {meta}</span>
+                            </p>
+                        </div>
+                    </div>
+                """.format(
+                    num=idx,
+                    title_html=(f'<a href="{url}" target="_blank" class="news-link">{item_title}</a>' if url else item_title),
+                    meta=html_escape(meta_text) if meta_text else "-",
+                )
+            return block
+
+        html_block += render_list("实时热度", hot_items)
+        html_block += render_list("起量中", rising_items)
+        html_block += """
+                </div>
+        """
+        return html_block
+
+    douyin_focus_html = render_douyin_focus_html(report_data.get("douyin_focus"))
+
     # 生成 AI 分析 HTML
     ai_html = render_ai_analysis_html_rich(ai_analysis) if ai_analysis else ""
 
     # 准备各区域内容映射
     region_contents = {
+        "hot_events": hot_events_html,
+        "douyin_focus": douyin_focus_html,
         "hotlist": stats_html,
         "rss": rss_stats_html,
         "new_items": (new_titles_html, rss_new_html),  # 元组，分别处理

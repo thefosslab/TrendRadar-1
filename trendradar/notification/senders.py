@@ -165,13 +165,30 @@ def send_to_feishu(
             f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
         )
 
-        # 飞书 webhook 只显示 content.text，所有信息都整合到 text 中
-        payload = {
-            "msg_type": "text",
-            "content": {
+        # 飞书有两类 webhook：
+        # 1) 群机器人 Webhook（open-apis/bot/v2/hook/...）：要求 msg_type/content 结构
+        # 2) 飞书“流程/机器人指令”触发 Webhook（flow/api/trigger-webhook/...）：要求自定义参数（通常叫“内容”）
+        # 你当前提供的 URL 属于第 2 种，如果仍用第 1 种 payload，流程可能只发固定文案导致你看到“Daily Trend ...”两行。
+        is_flow_trigger = "/flow/api/trigger-webhook/" in webhook_url
+        if is_flow_trigger:
+            # 飞书“流程触发”入参映射可能不稳定：
+            # - 你的流程里使用了 {{内容}}，因此提供顶层字段“内容”
+            # - 同时也提供 message_type/content.text 结构（即使没做变量映射，也能直接取到正文）
+            payload = {
+                "内容": batch_content,
+                "message_type": "text",
+                "content": {"text": batch_content},
+                # 兼容其他可能的字段名
                 "text": batch_content,
-            },
-        }
+            }
+        else:
+            # 群机器人 webhook：只显示 content.text
+            payload = {
+                "msg_type": "text",
+                "content": {
+                    "text": batch_content,
+                },
+            }
 
         try:
             response = requests.post(

@@ -73,6 +73,20 @@ class AppContext:
         self.config = config
         self._storage_manager = None
 
+        # 初始化短链接配置
+        self._init_shorturl_config()
+
+    def _init_shorturl_config(self):
+        """初始化短链接配置"""
+        shorturl_config = self.config.get("SHORTURL", {})
+        if shorturl_config:
+            from trendradar.report.formatter import set_shorturl_config
+            set_shorturl_config({
+                "enabled": shorturl_config.get("ENABLED", False),
+                "service": shorturl_config.get("SERVICE", "tinyurl"),
+                "timeout": shorturl_config.get("TIMEOUT", 3),
+            })
+
     # === 配置访问 ===
 
     @property
@@ -273,6 +287,8 @@ class AppContext:
         new_titles: Optional[Dict] = None,
         id_to_name: Optional[Dict] = None,
         mode: str = "daily",
+        hot_events: Optional[List[Dict]] = None,
+        douyin_focus: Optional[Dict] = None,
     ) -> Dict:
         """准备报告数据"""
         return prepare_report_data(
@@ -282,6 +298,8 @@ class AppContext:
             id_to_name=id_to_name,
             mode=mode,
             rank_threshold=self.rank_threshold,
+            hot_events=hot_events,
+            douyin_focus=douyin_focus,
             matches_word_groups_func=self.matches_word_groups,
             load_frequency_words_func=self.load_frequency_words,
             show_new_section=self.show_new_section,
@@ -300,6 +318,8 @@ class AppContext:
         rss_new_items: Optional[List[Dict]] = None,
         ai_analysis: Optional[Any] = None,
         standalone_data: Optional[Dict] = None,
+        hot_events: Optional[List[Dict]] = None,
+        douyin_focus: Optional[Dict] = None,
     ) -> str:
         """生成HTML报告"""
         return generate_html_report(
@@ -315,6 +335,8 @@ class AppContext:
             date_folder=self.format_date(),
             time_filename=self.format_time(),
             render_html_func=lambda *args, **kwargs: self.render_html(*args, rss_items=rss_items, rss_new_items=rss_new_items, ai_analysis=ai_analysis, standalone_data=standalone_data, **kwargs),
+            hot_events=hot_events,
+            douyin_focus=douyin_focus,
             matches_word_groups_func=self.matches_word_groups,
             load_frequency_words_func=self.load_frequency_words,
         )

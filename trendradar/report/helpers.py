@@ -93,8 +93,9 @@ def format_rank_display(ranks: List[int], rank_threshold: int, format_type: str)
         highlight_start = "<font color='red'><strong>"
         highlight_end = "</strong></font>"
     elif format_type == "feishu":
-        highlight_start = "<font color='red'>**"
-        highlight_end = "**</font>"
+        # 飞书文本消息不支持 HTML，使用 emoji 标记高排名
+        highlight_start = "🏆"
+        highlight_end = ""
     elif format_type == "dingtalk":
         highlight_start = "**"
         highlight_end = "**"
@@ -114,7 +115,12 @@ def format_rank_display(ranks: List[int], rank_threshold: int, format_type: str)
 
     # 生成排名显示
     rank_str = ""
-    if min_rank <= rank_threshold:
+    if format_type == "feishu":
+        # 飞书简洁格式：只显示 Top5，其他不显示排名
+        if min_rank <= rank_threshold:
+            rank_str = f"🏆Top{min_rank}"
+        # 低排名不显示，保持简洁
+    elif min_rank <= rank_threshold:
         if min_rank == max_rank:
             rank_str = f"{highlight_start}[{min_rank}]{highlight_end}"
         else:
@@ -125,7 +131,11 @@ def format_rank_display(ranks: List[int], rank_threshold: int, format_type: str)
         else:
             rank_str = f"[{min_rank} - {max_rank}]"
 
-    # 计算热度趋势
+    # 飞书简洁模式：不显示趋势箭头
+    if format_type == "feishu":
+        return rank_str
+
+    # 其他平台：计算热度趋势
     trend_arrow = ""
     if len(ranks) >= 2:
         prev_rank = ranks[-2]
@@ -136,6 +146,5 @@ def format_rank_display(ranks: List[int], rank_threshold: int, format_type: str)
             trend_arrow = "🔻"  # 排名下降（数值变大）
         else:
             trend_arrow = "➖"  # 排名持平
-    # len(ranks) == 1 时不显示趋势箭头（新上榜由 is_new 字段在 formatter.py 中处理）
 
     return f"{rank_str} {trend_arrow}" if trend_arrow else rank_str

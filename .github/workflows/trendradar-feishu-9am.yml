@@ -1,0 +1,45 @@
+name: TrendRadar 飞书推送（北京时间 09:00）
+
+on:
+  schedule:
+    # GitHub Actions 的 cron 使用 UTC；北京时间(UTC+8) 09:00 = UTC 01:00
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: trendradar-feishu
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Shanghai
+      CONFIG_PATH: config/config.yaml
+      FREQUENCY_WORDS_PATH: config/frequency_words.txt
+      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+      # 可选：如果你要在 Actions 里启用 AI（不推荐默认开）
+      # AI_ANALYSIS_ENABLED: "true"
+      # AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      # AI_MODEL: ${{ secrets.AI_MODEL }}
+      # AI_API_BASE: ${{ secrets.AI_API_BASE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run TrendRadar (send Feishu)
+        run: |
+          mkdir -p output
+          python -m trendradar

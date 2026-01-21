@@ -22,7 +22,7 @@ DEFAULT_BATCH_SIZES = {
 }
 
 # 默认区域顺序
-DEFAULT_REGION_ORDER = ["hotlist", "rss", "new_items", "standalone", "ai_analysis"]
+DEFAULT_REGION_ORDER = ["hot_events", "douyin_focus", "new_items", "hotlist", "rss", "standalone", "ai_analysis"]
 
 
 def split_content_into_batches(
@@ -133,11 +133,8 @@ def split_content_into_batches(
         base_header += f"**时间：** {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
         base_header += f"**类型：** {report_type}\n\n"
     elif format_type == "feishu":
-        base_header = f"**总新闻数：** {total_titles}\n"
-        base_header += ai_stats_line
-        base_header += f"**时间：** {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        base_header += f"**类型：** {report_type}\n\n"
-        base_header += "---\n\n"
+        # 飞书简洁头部
+        base_header = f"📊 **热点速报** | {now.strftime('%m-%d %H:%M')} | 共 {total_titles} 条\n\n"
     elif format_type == "dingtalk":
         base_header = f"**总新闻数：** {total_titles}\n"
         base_header += ai_stats_line
@@ -164,9 +161,7 @@ def split_content_into_batches(
         if update_info:
             base_footer += f"\n> TrendRadar 发现新版本 **{update_info['remote_version']}**，当前 **{update_info['current_version']}**"
     elif format_type == "feishu":
-        base_footer = f"\n\n<font color='grey'>更新时间：{now.strftime('%Y-%m-%d %H:%M:%S')}</font>"
-        if update_info:
-            base_footer += f"\n<font color='grey'>TrendRadar 发现新版本 {update_info['remote_version']}，当前 {update_info['current_version']}</font>"
+        base_footer = ""  # 飞书简洁模式：去掉 footer
     elif format_type == "dingtalk":
         base_footer = f"\n\n> 更新时间：{now.strftime('%Y-%m-%d %H:%M:%S')}"
         if update_info:
@@ -187,7 +182,7 @@ def split_content_into_batches(
         elif format_type == "ntfy":
             stats_header = f"📊 **{stats_title}** (共 {total_hotlist_count} 条)\n\n"
         elif format_type == "feishu":
-            stats_header = f"📊 **{stats_title}** (共 {total_hotlist_count} 条)\n\n"
+            stats_header = f"\n**━━ {stats_title} ━━**\n\n"
         elif format_type == "dingtalk":
             stats_header = f"📊 **{stats_title}** (共 {total_hotlist_count} 条)\n\n"
         elif format_type == "slack":
@@ -294,12 +289,13 @@ def split_content_into_batches(
                 else:
                     word_header = f"📌 {sequence_display} **{word}** : {count} 条\n\n"
             elif format_type == "feishu":
+                # 飞书简洁词组标题
                 if count >= 10:
-                    word_header = f"🔥 <font color='grey'>{sequence_display}</font> **{word}** : <font color='red'>{count}</font> 条\n\n"
+                    word_header = f"🔥 **{word}** ({count}条)\n"
                 elif count >= 5:
-                    word_header = f"📈 <font color='grey'>{sequence_display}</font> **{word}** : <font color='orange'>{count}</font> 条\n\n"
+                    word_header = f"📈 **{word}** ({count}条)\n"
                 else:
-                    word_header = f"📌 <font color='grey'>{sequence_display}</font> **{word}** : {count} 条\n\n"
+                    word_header = f"📌 **{word}** ({count}条)\n"
             elif format_type == "dingtalk":
                 if count >= 10:
                     word_header = (
@@ -437,7 +433,7 @@ def split_content_into_batches(
                 elif format_type == "ntfy":
                     separator = f"\n\n"
                 elif format_type == "feishu":
-                    separator = f"\n{feishu_separator}\n\n"
+                    separator = f"\n"
                 elif format_type == "dingtalk":
                     separator = f"\n---\n\n"
                 elif format_type == "slack":
@@ -691,6 +687,29 @@ def split_content_into_batches(
             add_separator
         )
 
+    # 定义处理全网热点事件的函数
+    def process_hot_events_wrapper(current_batch, current_batch_has_content, batches, add_separator=True):
+        """处理全网热点事件（跨平台聚合）"""
+        hot_events = report_data.get("hot_events") or []
+        if not hot_events:
+            return current_batch, current_batch_has_content, batches
+        return _process_hot_events_section(
+            hot_events, format_type, feishu_separator, base_header, base_footer,
+            max_bytes, current_batch, current_batch_has_content, batches,
+            rank_threshold, add_separator
+        )
+
+    def process_douyin_focus_wrapper(current_batch, current_batch_has_content, batches, add_separator=True):
+        """处理抖音深度热度区"""
+        douyin_focus = report_data.get("douyin_focus") or {}
+        if not douyin_focus:
+            return current_batch, current_batch_has_content, batches
+        return _process_douyin_focus_section(
+            douyin_focus, format_type, feishu_separator, base_header, base_footer,
+            max_bytes, current_batch, current_batch_has_content, batches,
+            rank_threshold, add_separator
+        )
+
     # 按 region_order 顺序处理各区域
     # 记录是否已有区域内容（用于决定是否添加分割线）
     has_region_content = False
@@ -704,7 +723,15 @@ def split_content_into_batches(
         # 决定是否需要添加分割线（第一个有内容的区域不需要）
         add_separator = has_region_content
 
-        if region == "hotlist":
+        if region == "hot_events":
+            current_batch, current_batch_has_content, batches = process_hot_events_wrapper(
+                current_batch, current_batch_has_content, batches, add_separator
+            )
+        elif region == "douyin_focus":
+            current_batch, current_batch_has_content, batches = process_douyin_focus_wrapper(
+                current_batch, current_batch_has_content, batches, add_separator
+            )
+        elif region == "hotlist":
             # 处理热榜统计
             current_batch, current_batch_has_content, batches = process_stats_section(
                 current_batch, current_batch_has_content, batches, add_separator
@@ -778,7 +805,8 @@ def split_content_into_batches(
 
         for i, id_value in enumerate(report_data["failed_ids"], 1):
             if format_type == "feishu":
-                failed_line = f"  • <font color='red'>{id_value}</font>\n"
+                # 飞书不支持 HTML，使用 emoji 标记
+                failed_line = f"  • ❌ {id_value}\n"
             elif format_type == "dingtalk":
                 failed_line = f"  • **{id_value}**\n"
             else:
@@ -802,6 +830,244 @@ def split_content_into_batches(
         batches.append(current_batch + base_footer)
 
     return batches
+
+
+def _process_hot_events_section(
+    hot_events: list,
+    format_type: str,
+    feishu_separator: str,
+    base_header: str,
+    base_footer: str,
+    max_bytes: int,
+    current_batch: str,
+    current_batch_has_content: bool,
+    batches: List[str],
+    rank_threshold: int = 10,
+    add_separator: bool = True,
+) -> tuple:
+    """处理全网热点事件区块（跨平台聚合）"""
+    if not hot_events:
+        return current_batch, current_batch_has_content, batches
+
+    total_items = len(hot_events)
+
+    header = ""
+    if add_separator and current_batch_has_content:
+        if format_type == "feishu":
+            header = f"\n{feishu_separator}\n\n🌐 **全网热点事件** (Top {total_items})\n\n"
+        elif format_type == "dingtalk":
+            header = f"\n---\n\n🌐 **全网热点事件** (Top {total_items})\n\n"
+        elif format_type in ("wework", "bark"):
+            header = f"\n\n\n\n🌐 **全网热点事件** (Top {total_items})\n\n"
+        elif format_type == "telegram":
+            header = f"\n\n🌐 全网热点事件 (Top {total_items})\n\n"
+        elif format_type == "slack":
+            header = f"\n\n🌐 *全网热点事件* (Top {total_items})\n\n"
+        else:
+            header = f"\n\n🌐 **全网热点事件** (Top {total_items})\n\n"
+    else:
+        if format_type == "feishu":
+            header = f"🌐 **全网热点事件** (Top {total_items})\n\n"
+        elif format_type == "dingtalk":
+            header = f"🌐 **全网热点事件** (Top {total_items})\n\n"
+        elif format_type == "telegram":
+            header = f"🌐 全网热点事件 (Top {total_items})\n\n"
+        elif format_type == "slack":
+            header = f"🌐 *全网热点事件* (Top {total_items})\n\n"
+        else:
+            header = f"🌐 **全网热点事件** (Top {total_items})\n\n"
+
+    test_content = current_batch + header
+    if len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+        if current_batch_has_content:
+            batches.append(current_batch + base_footer)
+        current_batch = base_header + header
+        current_batch_has_content = True
+    else:
+        current_batch = test_content
+        current_batch_has_content = True
+
+    # 每条事件：标题 + 平台覆盖信息 + 最佳排名
+    for i, item in enumerate(hot_events, 1):
+        title = item.get("title", "")
+        url = item.get("mobile_url") or item.get("url") or ""
+        platforms = item.get("platforms") or []
+        platform_count = int(item.get("platform_count") or len(platforms) or 0)
+
+        # 平台列表太长时截断
+        platforms_short = " / ".join(platforms[:4])
+        if len(platforms) > 4:
+            platforms_short += " 等"
+
+        # 排名显示（复用 formatter 的样式逻辑）
+        ranks = item.get("ranks") or []
+        rank_display = format_rank_display(ranks, rank_threshold, format_type)
+
+        if url:
+            title_part = f"[{title}]({url})"
+        else:
+            title_part = title
+
+        meta_part = ""
+        if format_type == "feishu":
+            # 飞书简洁格式：不显示平台数
+            meta_part = ""
+        elif format_type == "slack":
+            meta_part = f" `[{platform_count}平台: {platforms_short}]`"
+        else:
+            meta_part = f" [{platform_count}平台: {platforms_short}]"
+
+        line = f"  {i}. {title_part}{meta_part}"
+        if rank_display:
+            line += f" {rank_display}"
+        line += "\n"
+
+        test_content = current_batch + line
+        if len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+            if current_batch_has_content:
+                batches.append(current_batch + base_footer)
+            current_batch = base_header + header + line
+            current_batch_has_content = True
+        else:
+            current_batch = test_content
+            current_batch_has_content = True
+
+    return current_batch, current_batch_has_content, batches
+
+
+def _process_douyin_focus_section(
+    douyin_focus: Dict,
+    format_type: str,
+    feishu_separator: str,
+    base_header: str,
+    base_footer: str,
+    max_bytes: int,
+    current_batch: str,
+    current_batch_has_content: bool,
+    batches: List[str],
+    rank_threshold: int = 10,
+    add_separator: bool = True,
+) -> tuple:
+    """处理抖音深度热度区块"""
+    if not douyin_focus:
+        return current_batch, current_batch_has_content, batches
+
+    hot_items = douyin_focus.get("hot") or []
+    rising_items = douyin_focus.get("rising") or []
+    if not hot_items and not rising_items:
+        return current_batch, current_batch_has_content, batches
+
+    total_items = len(hot_items) + len(rising_items)
+    header = ""
+    if add_separator and current_batch_has_content:
+        if format_type == "feishu":
+            header = f"\n{feishu_separator}\n\n🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+        elif format_type == "dingtalk":
+            header = f"\n---\n\n🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+        elif format_type in ("wework", "bark"):
+            header = f"\n\n\n\n🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+        elif format_type == "telegram":
+            header = f"\n\n🎵 抖音游戏热度深度区 (共 {total_items} 条)\n\n"
+        elif format_type == "slack":
+            header = f"\n\n🎵 *抖音游戏热度深度区* (共 {total_items} 条)\n\n"
+        else:
+            header = f"\n\n🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+    else:
+        if format_type == "feishu":
+            header = f"🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+        elif format_type == "dingtalk":
+            header = f"🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+        elif format_type == "telegram":
+            header = f"🎵 抖音游戏热度深度区 (共 {total_items} 条)\n\n"
+        elif format_type == "slack":
+            header = f"🎵 *抖音游戏热度深度区* (共 {total_items} 条)\n\n"
+        else:
+            header = f"🎵 **抖音游戏热度深度区** (共 {total_items} 条)\n\n"
+
+    test_content = current_batch + header
+    if len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+        if current_batch_has_content:
+            batches.append(current_batch + base_footer)
+        current_batch = base_header + header
+        current_batch_has_content = True
+    else:
+        current_batch = test_content
+        current_batch_has_content = True
+
+    def add_subtitle(title: str) -> None:
+        nonlocal current_batch, current_batch_has_content, batches
+        if not title:
+            return
+        if format_type in ("wework", "bark"):
+            sub = f"**{title}**\n\n"
+        elif format_type == "telegram":
+            sub = f"{title}\n\n"
+        elif format_type == "slack":
+            sub = f"*{title}*\n\n"
+        else:
+            sub = f"**{title}**\n\n"
+        test = current_batch + sub
+        if len(test.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+            if current_batch_has_content:
+                batches.append(current_batch + base_footer)
+            current_batch = base_header + sub
+            current_batch_has_content = True
+        else:
+            current_batch = test
+            current_batch_has_content = True
+
+    def add_items(items: List[Dict], show_trend: bool = False) -> None:
+        nonlocal current_batch, current_batch_has_content, batches
+        for i, item in enumerate(items, 1):
+            title_data = {
+                "title": item.get("title", ""),
+                "source_name": douyin_focus.get("platform_name", "抖音"),
+                "time_display": "",
+                "count": 1,
+                "ranks": [item.get("rank")] if item.get("rank") else [],
+                "rank_threshold": rank_threshold,
+                "url": item.get("url", ""),
+                "mobile_url": item.get("mobile_url", ""),
+                "is_new": False,
+            }
+            formatted_title = format_title_for_platform(format_type, title_data, show_source=False)
+            suffix_parts = []
+            delta = item.get("delta", 0)
+            trend = item.get("trend", "")
+            total_improve = item.get("total_improve", 0)
+            improve_steps = item.get("improve_steps", 0)
+            if delta and delta > 0:
+                suffix_parts.append(f"⬆️+{delta}")
+            if show_trend and total_improve and total_improve > 0:
+                suffix_parts.append(f"累计+{total_improve}")
+            if show_trend and improve_steps and improve_steps > 0:
+                suffix_parts.append(f"连续{improve_steps}")
+            if show_trend and trend:
+                suffix_parts.append(f"趋势 {trend}")
+            suffix = f" {' · '.join(suffix_parts)}" if suffix_parts else ""
+            line = f"  {i}. {formatted_title}{suffix}\n"
+
+            test = current_batch + line
+            if len(test.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+                if current_batch_has_content:
+                    batches.append(current_batch + base_footer)
+                current_batch = base_header + line
+                current_batch_has_content = True
+            else:
+                current_batch = test
+                current_batch_has_content = True
+
+    if hot_items:
+        add_subtitle(f"🔥 实时热度 (Top {len(hot_items)})")
+        add_items(hot_items, show_trend=False)
+        current_batch += "\n"
+
+    if rising_items:
+        add_subtitle(f"🚀 起量中 (Top {len(rising_items)})")
+        add_items(rising_items, show_trend=True)
+        current_batch += "\n"
+
+    return current_batch, current_batch_has_content, batches
 
 
 def _process_rss_stats_section(
@@ -913,12 +1179,13 @@ def _process_rss_stats_section(
             else:
                 word_header = f"📌 {sequence_display} **{word}** : {count} 条\n\n"
         elif format_type == "feishu":
+            # 飞书简洁格式
             if count >= 10:
-                word_header = f"🔥 <font color='grey'>{sequence_display}</font> **{word}** : <font color='red'>{count}</font> 条\n\n"
+                word_header = f"🔥 **{word}** ({count}条)\n"
             elif count >= 5:
-                word_header = f"📈 <font color='grey'>{sequence_display}</font> **{word}** : <font color='orange'>{count}</font> 条\n\n"
+                word_header = f"📈 **{word}** ({count}条)\n"
             else:
-                word_header = f"📌 <font color='grey'>{sequence_display}</font> **{word}** : {count} 条\n\n"
+                word_header = f"📌 **{word}** ({count}条)\n"
         elif format_type == "dingtalk":
             if count >= 10:
                 word_header = f"🔥 {sequence_display} **{word}** : **{count}** 条\n\n"
@@ -1246,8 +1513,7 @@ def _format_rss_item_line(
             item_line = f"  {index}. [{title}]({url})"
         else:
             item_line = f"  {index}. {title}"
-        if friendly_time:
-            item_line += f" <font color='grey'>- {friendly_time}</font>"
+        # 飞书简洁模式：不显示时间
     elif format_type == "telegram":
         if url:
             item_line = f"  {index}. {title} ({url})"
@@ -1527,10 +1793,7 @@ def _format_standalone_platform_item(item: Dict, index: int, format_type: str, r
             item_line = f"  {index}. {title}"
         if rank_display:
             item_line += f" {rank_display}"
-        if time_display:
-            item_line += f" <font color='grey'>- {time_display}</font>"
-        if count_display:
-            item_line += f" <font color='green'>{count_display}</font>"
+        # 飞书简洁模式：不显示时间和次数
 
     elif format_type == "dingtalk":
         if url:
@@ -1623,8 +1886,7 @@ def _format_standalone_rss_item(
             item_line = f"  {index}. [{title}]({url})"
         else:
             item_line = f"  {index}. {title}"
-        if meta_str:
-            item_line += f" <font color='grey'>- {meta_str}</font>"
+        # 飞书简洁模式：不显示元信息
     elif format_type == "telegram":
         if url:
             item_line = f"  {index}. {title} ({url})"

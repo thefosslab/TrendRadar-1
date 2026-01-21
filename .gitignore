@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+ENV/
+.env
+
+# OS
+.DS_Store
+
+# TrendRadar runtime outputs
+output/
+
+# Local docker env files (contain secrets)
+docker/.env
+docker/env.local
+

@@ -10,6 +10,8 @@ services:
     volumes:
       - ../config:/app/config:ro
       - ../output:/app/output
+      # 开发/本机定制：挂载本地代码到容器（无需重建镜像即可生效）
+      - ../trendradar:/app/trendradar:ro
 
     environment:
       - TZ=Asia/Shanghai
@@ -55,6 +57,26 @@ services:
       - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
       - RUN_MODE=${RUN_MODE:-cron}
       - IMMEDIATE_RUN=${IMMEDIATE_RUN:-true}
+
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:1200:1200"
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=redis
+      - REDIS_URL=redis://redis:6379/
+      - XIAOHONGSHU_COOKIE=${XIAOHONGSHU_COOKIE:-}
+
+  redis:
+    image: redis:7-alpine
+    container_name: rsshub-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
 
   trendradar-mcp:
     image: wantcat/trendradar-mcp:latest

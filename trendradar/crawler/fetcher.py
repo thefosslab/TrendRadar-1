@@ -78,8 +78,13 @@ class DataFetcher:
         if self.proxy_url:
             proxies = {"http": self.proxy_url, "https": self.proxy_url}
 
+        # 某些平台源经常返回 5xx（服务端问题），多次重试只会拖慢全流程
+        # 默认快速失败名单（可按需扩展）
+        fast_fail_platform_ids = {"kuaishou", "xiaohongshu"}
+        effective_max_retries = 0 if id_value in fast_fail_platform_ids else max_retries
+
         retries = 0
-        while retries <= max_retries:
+        while retries <= effective_max_retries:
             try:
                 response = requests.get(
                     url,
@@ -101,11 +106,30 @@ class DataFetcher:
                 return data_text, id_value, alias
 
             except Exception as e:
+                # 对 5xx 做降级策略：
+                # - fast_fail 平台：直接失败，不再等待重试
+                # - 其他平台：最多只对 5xx 再重试 1 次（避免长时间阻塞）
+                status_code = None
+                if isinstance(e, requests.HTTPError) and getattr(e, "response", None) is not None:
+                    status_code = getattr(e.response, "status_code", None)
+
+                if status_code and status_code >= 500:
+                    if id_value in fast_fail_platform_ids:
+                        print(f"请求 {id_value} 失败: HTTP {status_code}（快速失败，不重试）")
+                        return None, id_value, alias
+                    # 如果不是 fast_fail，也避免多次重试
+                    if retries >= 1:
+                        print(f"请求 {id_value} 失败: HTTP {status_code}（5xx 降级：最多重试 1 次）")
+                        return None, id_value, alias
+
                 retries += 1
-                if retries <= max_retries:
+                if retries <= effective_max_retries:
                     base_wait = random.uniform(min_retry_wait, max_retry_wait)
                     additional_wait = (retries - 1) * random.uniform(1, 2)
                     wait_time = base_wait + additional_wait
+                    # 5xx 时缩短等待时间（服务端故障时长时间 sleep 意义不大）
+                    if status_code and status_code >= 500:
+                        wait_time = min(wait_time, 1.0)
                     print(f"请求 {id_value} 失败: {e}. {wait_time:.2f}秒后重试...")
                     time.sleep(wait_time)
                 else:

@@ -183,13 +183,15 @@ def _load_display_config(config_data: Dict) -> Dict:
     display = config_data.get("display", {})
     regions = display.get("regions", {})
     standalone = display.get("standalone", {})
+    hot_events = display.get("hot_events", {})
+    douyin_focus = display.get("douyin_focus", {})
 
     # 默认区域顺序
-    default_region_order = ["hotlist", "rss", "new_items", "standalone", "ai_analysis"]
+    default_region_order = ["hot_events", "douyin_focus", "new_items", "hotlist", "rss", "standalone", "ai_analysis"]
     region_order = display.get("region_order", default_region_order)
 
     # 验证 region_order 中的值是否合法
-    valid_regions = {"hotlist", "rss", "new_items", "standalone", "ai_analysis"}
+    valid_regions = {"hot_events", "douyin_focus", "hotlist", "rss", "new_items", "standalone", "ai_analysis"}
     region_order = [r for r in region_order if r in valid_regions]
 
     # 如果过滤后为空，使用默认顺序
@@ -201,11 +203,32 @@ def _load_display_config(config_data: Dict) -> Dict:
         "REGION_ORDER": region_order,
         # 区域开关
         "REGIONS": {
+            "HOT_EVENTS": regions.get("hot_events", True),
             "HOTLIST": regions.get("hotlist", True),
             "NEW_ITEMS": regions.get("new_items", True),
             "RSS": regions.get("rss", True),
             "STANDALONE": regions.get("standalone", False),
             "AI_ANALYSIS": regions.get("ai_analysis", True),
+            "DOUYIN_FOCUS": regions.get("douyin_focus", False),
+        },
+        "RSS_RELAX_KEYWORDS": display.get("rss_relax_keywords", False),
+        # 全网热点事件配置
+        "HOT_EVENTS": {
+            "MAX_ITEMS": hot_events.get("max_items", 15),
+            "MIN_PLATFORMS": hot_events.get("min_platforms", 2),
+        },
+        "DOUYIN_FOCUS": {
+            "MAX_HOT_ITEMS": douyin_focus.get("max_hot_items", 20),
+            "MAX_RISING_ITEMS": douyin_focus.get("max_rising_items", 12),
+            "MIN_RANK_IMPROVE": douyin_focus.get("min_rank_improve", 8),
+            "MIN_TOTAL_IMPROVE": douyin_focus.get("min_total_improve", 12),
+            "MIN_CONSECUTIVE_IMPROVE": douyin_focus.get("min_consecutive_improve", 2),
+            "MAX_RANK": douyin_focus.get("max_rank", 60),
+            "TREND_POINTS": douyin_focus.get("trend_points", 4),
+            "RISING_WINDOW_POINTS": douyin_focus.get("rising_window_points", 4),
+            "ALLOW_UNFILTERED_HOT": douyin_focus.get("allow_unfiltered_hot", False),
+            "EXTRA_KEYWORDS": douyin_focus.get("extra_keywords", []),
+            "MUST_KEYWORDS": douyin_focus.get("must_keywords", []),
         },
         # 独立展示区配置
         "STANDALONE": {
@@ -506,7 +529,21 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     # Webhook 配置
     config.update(_load_webhook_config(config_data))
 
+    # 短链接配置
+    config["SHORTURL"] = _load_shorturl_config(config_data)
+
     # 打印通知渠道配置来源
     _print_notification_sources(config)
 
     return config
+
+
+def _load_shorturl_config(config_data: Dict[str, Any]) -> Dict[str, Any]:
+    """加载短链接配置"""
+    shorturl_config = config_data.get("shorturl", {})
+
+    return {
+        "ENABLED": shorturl_config.get("enabled", False),
+        "SERVICE": shorturl_config.get("service", "tinyurl"),
+        "TIMEOUT": shorturl_config.get("timeout", 3),
+    }

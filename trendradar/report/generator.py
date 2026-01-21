@@ -18,6 +18,8 @@ def prepare_report_data(
     id_to_name: Optional[Dict] = None,
     mode: str = "daily",
     rank_threshold: int = 3,
+    hot_events: Optional[List[Dict]] = None,
+    douyin_focus: Optional[Dict] = None,
     matches_word_groups_func: Optional[Callable] = None,
     load_frequency_words_func: Optional[Callable] = None,
     show_new_section: bool = True,
@@ -132,6 +134,8 @@ def prepare_report_data(
     return {
         "stats": processed_stats,
         "new_titles": processed_new_titles,
+        "hot_events": hot_events or [],
+        "douyin_focus": douyin_focus or {},
         "failed_ids": failed_ids or [],
         "total_new_count": sum(
             len(source["titles"]) for source in processed_new_titles
@@ -152,6 +156,8 @@ def generate_html_report(
     date_folder: str = "",
     time_filename: str = "",
     render_html_func: Optional[Callable] = None,
+    hot_events: Optional[List[Dict]] = None,
+    douyin_focus: Optional[Dict] = None,
     matches_word_groups_func: Optional[Callable] = None,
     load_frequency_words_func: Optional[Callable] = None,
 ) -> str:
@@ -198,6 +204,8 @@ def generate_html_report(
         id_to_name,
         mode,
         rank_threshold,
+        hot_events,
+        douyin_focus,
         matches_word_groups_func,
         load_frequency_words_func,
     )

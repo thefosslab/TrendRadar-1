@@ -21,6 +21,8 @@ from trendradar.crawler import DataFetcher
 from trendradar.storage import convert_crawl_results_to_news_data
 from trendradar.utils.time import is_within_days
 from trendradar.ai import AIAnalyzer, AIAnalysisResult
+from trendradar.report.hot_events import build_hot_events
+from trendradar.report.douyin_focus import build_douyin_focus
 
 
 def check_version_update(
@@ -544,6 +546,37 @@ class NewsAnalyzer:
         # HTML生成（如果启用）
         html_file = None
         if self.ctx.config["STORAGE"]["FORMATS"]["HTML"]:
+            # 生成“全网热点事件”（跨平台聚合），用于 HTML 报告区块
+            hot_events = []
+            douyin_focus = {}
+            display_cfg = self.ctx.config.get("DISPLAY", {})
+            if display_cfg.get("REGIONS", {}).get("HOT_EVENTS", True):
+                hot_cfg = display_cfg.get("HOT_EVENTS", {})
+                hot_events = build_hot_events(
+                    title_info=title_info,
+                    id_to_name=id_to_name,
+                    max_items=int(hot_cfg.get("MAX_ITEMS", 15) or 15),
+                    min_platforms=int(hot_cfg.get("MIN_PLATFORMS", 2) or 2),
+                )
+            if display_cfg.get("REGIONS", {}).get("DOUYIN_FOCUS", False):
+                douyin_cfg = display_cfg.get("DOUYIN_FOCUS", {})
+                douyin_focus = build_douyin_focus(
+                    title_info=title_info,
+                    id_to_name=id_to_name,
+                    matches_word_groups_func=self.ctx.matches_word_groups,
+                    load_frequency_words_func=self.ctx.load_frequency_words,
+                    extra_keywords=douyin_cfg.get("EXTRA_KEYWORDS", []) or [],
+                    must_keywords=douyin_cfg.get("MUST_KEYWORDS", []) or [],
+                    allow_unfiltered_hot=bool(douyin_cfg.get("ALLOW_UNFILTERED_HOT", False)),
+                    max_hot_items=int(douyin_cfg.get("MAX_HOT_ITEMS", 20) or 20),
+                    max_rising_items=int(douyin_cfg.get("MAX_RISING_ITEMS", 12) or 12),
+                    min_rank_improve=int(douyin_cfg.get("MIN_RANK_IMPROVE", 8) or 8),
+                    min_total_improve=int(douyin_cfg.get("MIN_TOTAL_IMPROVE", 12) or 12),
+                    min_consecutive_improve=int(douyin_cfg.get("MIN_CONSECUTIVE_IMPROVE", 2) or 2),
+                    max_rank=int(douyin_cfg.get("MAX_RANK", 60) or 60),
+                    trend_points=int(douyin_cfg.get("TREND_POINTS", 4) or 4),
+                    rising_window_points=int(douyin_cfg.get("RISING_WINDOW_POINTS", 4) or 4),
+                )
             html_file = self.ctx.generate_html(
                 stats,
                 total_titles,
@@ -556,6 +589,8 @@ class NewsAnalyzer:
                 rss_new_items=rss_new_items,
                 ai_analysis=ai_result,
                 standalone_data=standalone_data,
+                hot_events=hot_events,
+                douyin_focus=douyin_focus,
             )
 
         return stats, html_file, ai_result
@@ -573,6 +608,7 @@ class NewsAnalyzer:
         rss_new_items: Optional[List[Dict]] = None,
         standalone_data: Optional[Dict] = None,
         ai_result: Optional[AIAnalysisResult] = None,
+        title_info: Optional[Dict] = None,
     ) -> bool:
         """统一的通知发送逻辑，包含所有判断条件，支持热榜+RSS合并推送+AI分析+独立展示区"""
         has_notification = self._has_notification_configured()
@@ -631,7 +667,46 @@ class NewsAnalyzer:
                     )
 
             # 准备报告数据
-            report_data = self.ctx.prepare_report(stats, failed_ids, new_titles, id_to_name, mode)
+            hot_events = []
+            douyin_focus = {}
+            display_cfg = self.ctx.config.get("DISPLAY", {})
+            if display_cfg.get("REGIONS", {}).get("HOT_EVENTS", True) and title_info and id_to_name:
+                hot_cfg = display_cfg.get("HOT_EVENTS", {})
+                hot_events = build_hot_events(
+                    title_info=title_info,
+                    id_to_name=id_to_name,
+                    max_items=int(hot_cfg.get("MAX_ITEMS", 15) or 15),
+                    min_platforms=int(hot_cfg.get("MIN_PLATFORMS", 2) or 2),
+                )
+            if display_cfg.get("REGIONS", {}).get("DOUYIN_FOCUS", False) and title_info and id_to_name:
+                douyin_cfg = display_cfg.get("DOUYIN_FOCUS", {})
+                douyin_focus = build_douyin_focus(
+                    title_info=title_info,
+                    id_to_name=id_to_name,
+                    matches_word_groups_func=self.ctx.matches_word_groups,
+                    load_frequency_words_func=self.ctx.load_frequency_words,
+                    extra_keywords=douyin_cfg.get("EXTRA_KEYWORDS", []) or [],
+                    must_keywords=douyin_cfg.get("MUST_KEYWORDS", []) or [],
+                    allow_unfiltered_hot=bool(douyin_cfg.get("ALLOW_UNFILTERED_HOT", False)),
+                    max_hot_items=int(douyin_cfg.get("MAX_HOT_ITEMS", 20) or 20),
+                    max_rising_items=int(douyin_cfg.get("MAX_RISING_ITEMS", 12) or 12),
+                    min_rank_improve=int(douyin_cfg.get("MIN_RANK_IMPROVE", 8) or 8),
+                    min_total_improve=int(douyin_cfg.get("MIN_TOTAL_IMPROVE", 12) or 12),
+                    min_consecutive_improve=int(douyin_cfg.get("MIN_CONSECUTIVE_IMPROVE", 2) or 2),
+                    max_rank=int(douyin_cfg.get("MAX_RANK", 60) or 60),
+                    trend_points=int(douyin_cfg.get("TREND_POINTS", 4) or 4),
+                    rising_window_points=int(douyin_cfg.get("RISING_WINDOW_POINTS", 4) or 4),
+                )
+
+            report_data = self.ctx.prepare_report(
+                stats,
+                failed_ids,
+                new_titles,
+                id_to_name,
+                mode,
+                hot_events=hot_events,
+                douyin_focus=douyin_focus,
+            )
 
             # 是否发送版本更新信息
             update_info_to_send = self.update_info if cfg["SHOW_VERSION_UPDATE"] else None
@@ -879,6 +954,11 @@ class NewsAnalyzer:
         try:
             word_groups, filter_words, global_filters = self.ctx.load_frequency_words()
         except FileNotFoundError:
+            word_groups, filter_words, global_filters = [], [], []
+
+        # RSS 放宽关键词：展示全部 RSS
+        rss_relax_keywords = self.ctx.config.get("DISPLAY", {}).get("RSS_RELAX_KEYWORDS", False)
+        if rss_relax_keywords:
             word_groups, filter_words, global_filters = [], [], []
 
         timezone = self.ctx.timezone
@@ -1299,6 +1379,7 @@ class NewsAnalyzer:
                 rss_new_items=rss_new_items,
                 standalone_data=standalone_data,
                 ai_result=ai_result,
+                title_info=title_info,
             )
 
         # 打开浏览器（仅在非容器环境）
